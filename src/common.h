@@ -3,25 +3,8 @@
 
 #include <stdlib.h>
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
-
-#define ROW_COUNT 18
-#define COL_COUNT 32
-#define MAX_HEIGHT 16
-
-/*
-  category 2-bit
-  suit - 2-bit
-  rank - 4-bit
-*/
-typedef unsigned char chip_t;
-
-typedef struct tag_map {
-  unsigned char map[ROW_COUNT][COL_COUNT];
-} map_t;
-
-extern map_t standard_map;
+#define SCREEN_WIDTH (ScreenWidth())
+#define SCREEN_HEIGHT (ScreenHeight())
 
 static inline int min_int(int x, int y)
 {
@@ -38,7 +21,9 @@ static inline int rrand(int m)
   return (int)((double)m * ( rand() / (RAND_MAX+1.0) ));
 }
 
-extern void shuffle(void *obj, size_t nmemb, size_t size);
+void swap(void *array, int i1, int i2, size_t size);
+void shuffle(void *obj, size_t nmemb, size_t size);
+void topological_sort(void *array, size_t nmemb, size_t size, int (*has_edge)(const void*, const void*));
 
 #endif
 

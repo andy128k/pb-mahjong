@@ -4,10 +4,12 @@
 
 void swap(void *array, int i1, int i2, size_t size)
 {
+  void *temp;
+
   if (i1 == i2)
     return;
 
-  void *temp = malloc(size);
+  temp = malloc(size);
   
   memcpy(temp, (char*)array + i1*size, size);
   memcpy((char*)array + i1*size, (char*)array + i2*size, size);
@@ -44,12 +46,13 @@ struct ts_data {
 static void visit(struct ts_data *ts_data, int n)
 {
   int m;
+  void *nth_ptr;
 
   if (ts_data->visited[n])
     return;
   ts_data->visited[n] = 1;
 
-  void *nth_ptr = (char*)ts_data->array + n * ts_data->size;
+  nth_ptr = (char*)ts_data->array + n * ts_data->size;
   for (m = 0; m < ts_data->nmemb; ++m)
     {
       void *mth_ptr = (char*)ts_data->array + m * ts_data->size;

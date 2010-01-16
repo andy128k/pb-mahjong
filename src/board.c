@@ -9,19 +9,7 @@ int position_equal(const position_t *pos1, const position_t *pos2)
     && pos1->k == pos2->k;
 }
 
-chip_t safe_get(board_t *board, int y, int x, int k)
-{
-  if (y < 0 || y >= MAX_ROW_COUNT)
-    return 0;
-  if (x < 0 || x >= MAX_COL_COUNT)
-    return 0;
-  if (k < 0 || k >= MAX_HEIGHT)
-    return 0;
-
-  return board->columns[y][x].chips[k];
-}
-
-chip_t board_get(board_t *board, position_t *pos)
+chip_t board_get(const board_t *board, const position_t *pos)
 {
   if (pos->y < 0 || pos->y >= MAX_ROW_COUNT)
     return 0;
@@ -33,7 +21,7 @@ chip_t board_get(board_t *board, position_t *pos)
   return board->columns[pos->y][pos->x].chips[pos->k];
 }
 
-void board_set(board_t *board, position_t *pos, chip_t chip)
+void board_set(board_t *board, const position_t *pos, chip_t chip)
 {
   if (pos->y < 0 || pos->y >= MAX_ROW_COUNT)
     return;
@@ -45,7 +33,7 @@ void board_set(board_t *board, position_t *pos, chip_t chip)
   board->columns[pos->y][pos->x].chips[pos->k] = chip;
 }
 
-int column_height(board_t *board, int y, int x)
+static int column_height(board_t *board, int y, int x)
 {
   int k;
 
@@ -61,6 +49,18 @@ int column_height(board_t *board, int y, int x)
 	return k + 1;
     }
   return 0;
+}
+
+static chip_t safe_get(const board_t *board, int y, int x, int k)
+{
+  if (y < 0 || y >= MAX_ROW_COUNT)
+    return 0;
+  if (x < 0 || x >= MAX_COL_COUNT)
+    return 0;
+  if (k < 0 || k >= MAX_HEIGHT)
+    return 0;
+
+  return board->columns[y][x].chips[k];
 }
 
 static int selectable(board_t *board, int y, int x)
@@ -213,9 +213,15 @@ void generate_board(board_t *board, map_t *map)
 {
   int i;
   board_t tmp;
+  chip_t pile[144];
+
+  /* prepare pile */
+  get_pile(pile);
+  shuffle(&pile[136], 4, sizeof(chip_t));
+  shuffle(&pile[140], 4, sizeof(chip_t));
+  shuffle(pile, 72, 2 * sizeof(chip_t));
 
   clear_board(&tmp);
-
   for (i = 0; i < 144; ++i)
     {
       int x = map->map[i].x;
@@ -224,13 +230,6 @@ void generate_board(board_t *board, map_t *map)
       
       tmp.columns[y][x].chips[z] = 0xFF;
     }
-  
-  chip_t pile[144];
-  get_pile(pile);
-  
-  shuffle(&pile[136], 4, sizeof(chip_t));
-  shuffle(&pile[140], 4, sizeof(chip_t));
-  shuffle(pile, 72, 2 * sizeof(chip_t));
   
   clear_board(board);
   colorize(&tmp, pile, 144, board);

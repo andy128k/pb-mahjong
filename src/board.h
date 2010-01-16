@@ -33,10 +33,8 @@ typedef struct {
 
 positions_t* get_selectable_positions(board_t *board);
 
-chip_t safe_get(board_t *board, int y, int x, int k);
-int column_height(board_t *board, int y, int x);
-chip_t board_get(board_t *board, position_t *pos);
-void board_set(board_t *board, position_t *pos, chip_t chip);
+chip_t board_get(const board_t *board, const position_t *pos);
+void board_set(board_t *board, const position_t *pos, chip_t chip);
 
 /*******************************************************/
 

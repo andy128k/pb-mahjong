@@ -45,7 +45,7 @@ static void init_map(map_t *map)
   caret_pos = 0;
 }
 
-static int fits(chip_t a,  chip_t b)
+static int fits(chip_t a, chip_t b)
 {
   int category = a & 0xC0;
   if (category == 0xC0) /*flowers*/
@@ -65,6 +65,8 @@ static void cell_rect(const position_t *pos, struct rect* r)
 
   const int screen_width = ScreenWidth();
   const int screen_height = ScreenHeight();
+  int offset_x;
+  int offset_y;
 
   int w, h;
 
@@ -79,8 +81,8 @@ static void cell_rect(const position_t *pos, struct rect* r)
       w = h * IMG_WIDTH / IMG_HEIGHT;
     }
 
-  int offset_x = (screen_width - w * col_count) / 2;
-  int offset_y = (screen_height - h * row_count) / 2;
+  offset_x = (screen_width - w * col_count) / 2;
+  offset_y = (screen_height - h * row_count) / 2;
 
   r->x = offset_x + pos->x * w + 4 * pos->k;
   r->y = offset_y + pos->y * h + 4 * pos->k;
@@ -88,13 +90,21 @@ static void cell_rect(const position_t *pos, struct rect* r)
   r->h = 2 * h;
 }
 
-static void draw_chip(position_t *pos, chip_t chip, int selected)
+static void draw_caret(const struct rect *r, int color)
 {
-  struct rect r;
-  cell_rect(pos, &r);
+  DrawRect(r->x + 2, r->y + 2, r->w - 4, r->h - 4, color);
+  DrawRect(r->x + 3, r->y + 3, r->w - 6, r->h - 6, color);
+  DrawRect(r->x + 4, r->y + 4, r->w - 8, r->h - 8, color);
+  DrawRect(r->x + 5, r->y + 5, r->w - 10, r->h - 10, color);
+  DrawRect(r->x + 6, r->y + 6, r->w - 12, r->h - 12, color);
+}
 
+static void draw_chip(const position_t *pos, chip_t chip)
+{
   int i;
+  struct rect r;
 
+  cell_rect(pos, &r);
   DrawRect(r.x-4, r.y-4, r.w, r.h, DGRAY);
 
   for (i = 0; i < 3; ++i)
@@ -111,21 +121,18 @@ static void draw_chip(position_t *pos, chip_t chip, int selected)
 
   StretchBitmap(r.x+1, r.y+1, r.w-2, r.h-2, (ibitmap*)bitmaps[chip], 0);
 	
-  if (selected)
-    InvertArea(r.x+1, r.y+1, r.w-2, r.h-2);
-}
+  if (caret_pos >= 0 && caret_pos < g_selectable->count)
+    {
+      if (position_equal(pos, &g_selectable->positions[caret_pos]))
+	draw_caret(&r, DGRAY);
+    }
 
-static void draw_caret(int color)
-{
-  struct rect r;
-  
-  cell_rect(&g_selectable->positions[caret_pos], &r);
-
-  DrawRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, color);
-  DrawRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, color);
-  DrawRect(r.x + 4, r.y + 4, r.w - 8, r.h - 8, color);
-  DrawRect(r.x + 5, r.y + 5, r.w - 10, r.h - 10, color);
-  DrawRect(r.x + 6, r.y + 6, r.w - 12, r.h - 12, color);
+  if (selection_pos >= 0 && selection_pos < g_selectable->count)
+    {
+      position_t *selection = &g_selectable->positions[selection_pos];
+      if (position_equal(pos, selection))
+	InvertArea(r.x+1, r.y+1, r.w-2, r.h-2);
+    }
 }
 
 static int is_covered_by(const void *p1, const void *p2)
@@ -172,31 +179,67 @@ static void main_repaint(void)
   topological_sort(chips, chip_count, sizeof(position_t), is_covered_by);
 
   ClearScreen();
-
-  position_t *caret = &g_selectable->positions[caret_pos];
-  position_t *selection = &g_selectable->positions[selection_pos];
+  
   for (i = chip_count - 1; i >=0; --i)
     {
-      position_t *pos = &chips[i];
-
-      draw_chip(pos, board_get(&g_board, pos), position_equal(pos, selection));
-      
-      if (position_equal(pos, caret))
-	draw_caret(DGRAY);
+      const position_t *pos = &chips[i];
+      draw_chip(pos, board_get(&g_board, pos));
     }
   
-  int h = 20;
-  DrawTextRect(0, SCREEN_HEIGHT - 20, SCREEN_WIDTH, h, "влево, вправо - навигация, OK - выбор", ALIGN_FIT | ALIGN_CENTER);
+  /* help */
+  /*
+  {
+    int h = 20;
+    DrawTextRect(0, SCREEN_HEIGHT - 20, SCREEN_WIDTH, h, "←, ↑, →, ↓ - выбор, OK - afas", ALIGN_FIT | ALIGN_CENTER);
+  }
+  */
 }
 
 static int move_left(void)
 {
-  int new_pos = caret_pos;
   if (caret_pos > 0)
-    new_pos = caret_pos - 1;
-  else
-    new_pos = g_selectable->count - 1;
-  
+    {
+      --caret_pos;
+      return 1;
+    }
+  return 0;
+}
+
+static int move_right(void)
+{
+  if (caret_pos < g_selectable->count - 1)
+    {
+      ++caret_pos;
+      return 1;
+    }
+  return 0;
+}
+
+static int move_up(void)
+{
+  int i;
+  int min_dist = (MAX_ROW_COUNT + 1) * (MAX_COL_COUNT + 1);
+  int new_pos = caret_pos;
+
+  const position_t *caret = &g_selectable->positions[caret_pos];
+
+  for (i = 0; i < g_selectable->count; ++i)
+    if (i != caret_pos)
+      {
+	const position_t *pos = &g_selectable->positions[i];
+	int dist;
+
+	if (caret->y <= pos->y)
+	  continue;
+
+	dist = abs(caret->y - pos->y) * MAX_COL_COUNT + abs(caret->x - pos->x);
+	if (dist < min_dist)
+	  {
+	    new_pos = i;
+	    min_dist = dist;
+	  }
+      }
+
   if (new_pos != caret_pos)
     {
       caret_pos = new_pos;
@@ -205,14 +248,30 @@ static int move_left(void)
   return 0;
 }
 
-static int move_right(void)
+static int move_down(void)
 {
+  int i;
+  int min_dist = (MAX_ROW_COUNT + 1) * (MAX_COL_COUNT + 1);
   int new_pos = caret_pos;
-  if (caret_pos < g_selectable->count - 1)
-    new_pos = caret_pos + 1;
-  else
-    new_pos = 0;
-  
+
+  const position_t *caret = &g_selectable->positions[caret_pos];
+
+  for (i = 0; i < g_selectable->count; ++i)
+    if (i != caret_pos)
+      {
+	const position_t *pos = &g_selectable->positions[i];
+	int dist;
+	if (caret->y >= pos->y)
+	  continue;
+
+	dist = abs(caret->y - pos->y) * MAX_COL_COUNT + abs(caret->x - pos->x);
+	if (dist < min_dist)
+	  {
+	    new_pos = i;
+	    min_dist = dist;
+	  }
+      }
+
   if (new_pos != caret_pos)
     {
       caret_pos = new_pos;
@@ -257,17 +316,46 @@ static int finished(void)
   return 1;
 }
 
-static imenu game_menu[] = {
-  { ITEM_HEADER, 0, "Mahjong", NULL },
+static int pair_exists(board_t *board)
+{
+  int i, j;
+
+  for (i = 0; i < g_selectable->count - 1; ++i)
+    {
+      const chip_t chip1 = board_get(board, &g_selectable->positions[i]);
+      for (j = i + 1; j < g_selectable->count; ++j)
+	{
+	  const chip_t chip2 = board_get(board, &g_selectable->positions[j]);
+	  if (fits(chip1, chip2))
+	    return 1;
+	}
+    }
+  return 0;
+}
+
+static imenu game_menu_en[] = {
   { ITEM_ACTIVE, 1, "Continue", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 2, "New game (Standard)", NULL },
+  { ITEM_ACTIVE, 2, "New game (Easy)", NULL },
   { ITEM_ACTIVE, 3, "New game (Difficult)", NULL },
   { ITEM_ACTIVE, 4, "New game (Four Bridges)", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
   { ITEM_ACTIVE, 999, "Exit", NULL },
   { 0, 0, NULL, NULL }
 };
+
+static imenu game_menu_ru[] = {
+  { ITEM_ACTIVE, 1, "Продолжить", NULL },
+  { ITEM_SEPARATOR, 0, NULL, NULL },
+  { ITEM_ACTIVE, 2, "Новая игра (Лёгкая)", NULL },
+  { ITEM_ACTIVE, 3, "Новая игра (Тяжёлая)", NULL },
+  { ITEM_ACTIVE, 4, "Новая игра (Четыре моста)", NULL },
+  { ITEM_SEPARATOR, 0, NULL, NULL },
+  { ITEM_ACTIVE, 999, "Выход", NULL },
+  { 0, 0, NULL, NULL }
+};
+
+static imenu *game_menu = game_menu_en;
 
 static void game_menu_handler(int index)
 {
@@ -299,6 +387,18 @@ static void game_menu_handler(int index)
       break;
     }
 }
+
+static const char * const title_en = "Mahjong";
+static const char * const title_ru = "Маджонг";
+static const char *title;
+
+static const char * const win_text_en = "Solitaire is solved. Congratulations!";
+static const char * const win_text_ru = "Пасьянс решён. Поздравляем!";
+static const char *win_text;
+
+static const char * const lose_text_en = "There is no more free pair. You lose";
+static const char * const lose_text_ru = "Свободных пар больше нет. Вы проиграли.";
+static const char *lose_text;
 
 static void game_finished_dialog_handler(int button)
 {
@@ -335,13 +435,12 @@ static void select_cell(void)
 
       if (finished())
 	{
-	  Dialog(ICON_INFORMATION, "Mahjong", "You won", "OK", NULL, game_finished_dialog_handler);
+	  Dialog(ICON_INFORMATION, (char*)title, (char*)win_text, "OK", NULL, game_finished_dialog_handler);
 	}
-      /*
-      else if (no_solutions())
+      else if (!pair_exists(&g_board))
         {
+	  Dialog(ICON_INFORMATION, (char*)title, (char*)lose_text, "OK", NULL, game_finished_dialog_handler);
         }
-      */
     }
   else
     {
@@ -390,28 +489,50 @@ static int game_handler(int type, int par1, int par2)
 	  generic_move(move_right);
 	  break;
 
-	default:
-	  if (par1 == KEY_MENU) // or any other key
-	    {
-	      show_popup_strict(game_menu, game_menu_handler);
-	      return 1;
-	    }
+	case KEY_UP:
+	  generic_move(move_up);
 	  break;
+
+	case KEY_DOWN:
+	  generic_move(move_down);
+	  break;
+
+	case KEY_PREV:
+	case KEY_NEXT:
+	case KEY_MENU:
+	  show_popup_strict(game_menu, game_menu_handler);
+	  return 1;
 	}
       break;
     }
   return 0;
 }
 
-static imenu main_menu[] = {
+static imenu main_menu_en[] = {
   { ITEM_HEADER, 0, "Mahjong", NULL },
-  { ITEM_ACTIVE, 2, "New game (Standard)", NULL },
+  { ITEM_ACTIVE, 2, "New game (Easy)", NULL },
   { ITEM_ACTIVE, 3, "New game (Difficult)", NULL },
   { ITEM_ACTIVE, 4, "New game (Four Bridges)", NULL },
+  { ITEM_SEPARATOR, 0, NULL, NULL },
+  { ITEM_ACTIVE, 102, "Русский", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
   { ITEM_ACTIVE, 999, "Exit", NULL },
   { 0, 0, NULL, NULL }
 };
+
+static imenu main_menu_ru[] = {
+  { ITEM_HEADER, 0, "Маджонг", NULL },
+  { ITEM_ACTIVE, 2, "Новая игра (Лёгкая)", NULL },
+  { ITEM_ACTIVE, 3, "Новая игра (Тяжёлая)", NULL },
+  { ITEM_ACTIVE, 4, "Новая игра (Четыре моста)", NULL },
+  { ITEM_SEPARATOR, 0, NULL, NULL },
+  { ITEM_ACTIVE, 101, "English", NULL },
+  { ITEM_SEPARATOR, 0, NULL, NULL },
+  { ITEM_ACTIVE, 999, "Выход", NULL },
+  { 0, 0, NULL, NULL }
+};
+
+static imenu *main_menu = main_menu_en;
 
 static void main_menu_handler(int index)
 {
@@ -432,24 +553,39 @@ static void main_menu_handler(int index)
       SetEventHandler(game_handler);
       break;
       
-    case 999:
-      CloseApp();
+    case 101:
+      main_menu = main_menu_en;
+      game_menu = game_menu_en;
+      title = title_en;
+      win_text = win_text_en;
+      lose_text = lose_text_en;
+      show_popup_strict(main_menu, main_menu_handler);
       break;
       
-    default:
-      printf("%d\n", index);
+    case 102:
+      main_menu = main_menu_ru;
+      game_menu = game_menu_ru;
+      title = title_ru;
+      win_text = win_text_ru;
+      lose_text = lose_text_ru;
+      show_popup_strict(main_menu, main_menu_handler);
+      break;
+      
+    case 999:
+      CloseApp();
       break;
     }
 }
 
 static int main_handler(int type, int par1, int par2)
 {
+  extern const ibitmap background;
+
   switch (type)
     {
     case EVT_INIT:
       SetOrientation(ROTATE270);
       ClearScreen();
-      extern const ibitmap background;
       StretchBitmap(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (ibitmap*)&background, 0);
       FullUpdate();
       
@@ -467,8 +603,11 @@ static int main_handler(int type, int par1, int par2)
 
 int main(int argc, char **argv)
 {
-  // srand(time(NULL));
-  srand(12345);
+  srand(time(NULL));
+  
+  title = title_en;
+  win_text = win_text_en;
+  lose_text = lose_text_en;
   
   bitmaps_init();
 	

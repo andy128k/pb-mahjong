@@ -45,7 +45,7 @@ struct ts_data {
 
 static void visit(struct ts_data *ts_data, int n)
 {
-  int m;
+  size_t m;
   void *nth_ptr;
 
   if (ts_data->visited[n])
@@ -66,7 +66,7 @@ static void visit(struct ts_data *ts_data, int n)
 
 void topological_sort(void *array, size_t nmemb, size_t size, int (*has_edge)(const void*, const void*))
 {
-  int i;
+  size_t i;
 
   struct ts_data ts_data;
 

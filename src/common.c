@@ -2,32 +2,30 @@
 
 #include "common.h"
 
-void swap(void *array, int i1, int i2, size_t size)
+static inline void swap_b(void *e1, void *e2, size_t size, void *b)
 {
-  void *temp;
-
-  if (i1 == i2)
-    return;
-
-  temp = malloc(size);
-  
-  memcpy(temp, (char*)array + i1*size, size);
-  memcpy((char*)array + i1*size, (char*)array + i2*size, size);
-  memcpy((char*)array + i2*size, temp, size);
-
-  free(temp);
+  if (e1 != e2)
+    {
+      memcpy(b, e1, size);
+      memcpy(e1, e2, size);
+      memcpy(e2, b, size);
+    }
 }
 
-void shuffle(void *obj, size_t nmemb, size_t size)
+int rrand(int m)
+{
+  return rand() % m;
+}
+
+void shuffle(void *array, size_t nmemb, size_t size)
 {
   void *temp = malloc(size);
   size_t n = nmemb;
   while (n > 1)
     {
-      size_t k = rrand(n--);
-      memcpy(temp, (char*)obj + n*size, size);
-      memcpy((char*)obj + n*size, (char*)obj + k*size, size);
-      memcpy((char*)obj + k*size, temp, size);
+      size_t k = rrand(n);
+      swap_b((char*)array + (n-1)*size, (char*)array + k*size, size, temp);
+      --n;
     }
   free(temp);
 }

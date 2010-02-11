@@ -140,8 +140,8 @@ static int colorize(board_t *board, chip_t *pairs, int pile_size, board_t *resul
   for (i = 0; i < positions->count - 1; ++i)
     for (j = i + 1; j < positions->count; ++j)
       {
-	position_t* p1 = &positions->positions[i];
-	position_t* p2 = &positions->positions[j];
+	const position_t* p1 = &positions->positions[i];
+	const position_t* p2 = &positions->positions[j];
 
 	board_set(board, p1, 0);
 	board_set(board, p2, 0);
@@ -154,7 +154,7 @@ static int colorize(board_t *board, chip_t *pairs, int pile_size, board_t *resul
 	    free(positions);
 	    return 1;
 	  }
-	
+
 	board_set(board, p1, 0xFF);
 	board_set(board, p2, 0xFF);
       }
@@ -169,26 +169,29 @@ static void get_pile(chip_t pile[144])
   int c = 0;
 
   /**suits**/
-  for (i = 0; i < 4; ++i)
+  for (j = 0; j < 9; ++j)
     {
       /*stones*/
-      for (j = 0; j < 9; ++j)
+      for (i = 0; i < 4; ++i)
 	pile[c++] = 0x51 + j;
       /*bamboos*/
-      for (j = 0; j < 9; ++j)
+      for (i = 0; i < 4; ++i)
 	pile[c++] = 0x61 + j;
       /*characters*/
-      for (j = 0; j < 9; ++j)
+      for (i = 0; i < 4; ++i)
 	pile[c++] = 0x71 + j;
     }
   /**honors**/
-  for (i = 0; i < 4; ++i)
+  for (j = 0; j < 4; ++j)
     {
       /*winds*/
-      for (j = 0; j < 4; ++j)
+      for (i = 0; i < 4; ++i)
 	pile[c++] = 0x91 + j;
+    }
+  for (j = 0; j < 3; ++j)
+    {
       /*dragons*/
-      for (j = 0; j < 3; ++j)
+      for (i = 0; i < 4; ++i)
 	pile[c++] = 0xA1 + j;
     }
   /**flowers**/
@@ -214,7 +217,7 @@ void generate_board(board_t *board, map_t *map)
   int i;
   board_t tmp;
   chip_t pile[144];
-
+  
   /* prepare pile */
   get_pile(pile);
   shuffle(&pile[136], 4, sizeof(chip_t));
@@ -224,9 +227,9 @@ void generate_board(board_t *board, map_t *map)
   clear_board(&tmp);
   for (i = 0; i < 144; ++i)
     {
-      int x = map->map[i].x;
-      int y = map->map[i].y;
-      int z = map->map[i].z;
+      const int x = map->map[i].x;
+      const int y = map->map[i].y;
+      const int z = map->map[i].z;
       
       tmp.columns[y][x].chips[z] = 0xFF;
     }

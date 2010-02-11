@@ -8,8 +8,9 @@
 #include "maps.h"
 #include "bitmaps.h"
 #include "geometry.h"
-#include "helpers.h"
+#include "menu.h"
 
+static int orientation = ROTATE270;
 static board_t g_board;
 static int row_count;
 static int col_count;
@@ -17,13 +18,16 @@ static int caret_pos;
 static int selection_pos = -1;
 static positions_t* g_selectable = NULL;
 
+extern const ibitmap background;
+
+static void menu_handler(int index);
+
 static int cmp_pos(const void *p1, const void *p2)
 {
   const position_t* pos1 = p1;
   const position_t* pos2 = p2;
-
-  return (pos1->y * MAX_COL_COUNT + pos1->x)
-    - (pos2->y * MAX_COL_COUNT + pos2->x);
+  return ((pos1->y - 1) / 2 * MAX_COL_COUNT + pos1->x)
+    - ((pos2->y - 1) / 2 * MAX_COL_COUNT + pos2->x);
 }
 
 static void rebuild_selectables(void)
@@ -167,7 +171,7 @@ static void main_repaint(void)
     for (j = 0; j < MAX_COL_COUNT; ++j)
       for (k = 0; k < MAX_HEIGHT; ++k)
 	{
-	  chip_t chip = g_board.columns[i][j].chips[k];
+	  const chip_t chip = g_board.columns[i][j].chips[k];
 	  if (chip)
 	    {
 	      chips[chip_count].x = j;
@@ -232,7 +236,7 @@ static int move_up(void)
 	if (caret->y <= pos->y)
 	  continue;
 
-	dist = abs(caret->y - pos->y) * MAX_COL_COUNT + abs(caret->x - pos->x);
+	dist = abs((caret->y - 1) / 2 - (pos->y - 1) / 2) * MAX_COL_COUNT + abs(caret->x - pos->x);
 	if (dist < min_dist)
 	  {
 	    new_pos = i;
@@ -264,7 +268,7 @@ static int move_down(void)
 	if (caret->y >= pos->y)
 	  continue;
 
-	dist = abs(caret->y - pos->y) * MAX_COL_COUNT + abs(caret->x - pos->x);
+	dist = abs((caret->y - 1) / 2 - (pos->y - 1) / 2) * MAX_COL_COUNT + abs(caret->x - pos->x);
 	if (dist < min_dist)
 	  {
 	    new_pos = i;
@@ -357,41 +361,6 @@ static imenu game_menu_ru[] = {
 
 static imenu *game_menu = game_menu_en;
 
-static void game_menu_handler(int index)
-{
-  switch (index)
-    {
-    case 1:
-      break;
-
-    case 2:
-      init_map(&standard_map);
-      main_repaint();
-      FullUpdate();
-      break;
-
-    case 3:
-      init_map(&difficult_map);
-      main_repaint();
-      FullUpdate();
-      break;
-
-    case 4:
-      init_map(&four_bridges_map);
-      main_repaint();
-      FullUpdate();
-      break;
-
-    case 999:
-      CloseApp();
-      break;
-    }
-}
-
-static const char * const title_en = "Mahjong";
-static const char * const title_ru = "Маджонг";
-static const char *title;
-
 static const char * const win_text_en = "Solitaire is solved. Congratulations!";
 static const char * const win_text_ru = "Пасьянс решён. Поздравляем!";
 static const char *win_text;
@@ -399,11 +368,6 @@ static const char *win_text;
 static const char * const lose_text_en = "There is no more free pair. You lose";
 static const char * const lose_text_ru = "Свободных пар больше нет. Вы проиграли.";
 static const char *lose_text;
-
-static void game_finished_dialog_handler(int button)
-{
-  show_popup_strict(game_menu + 2, game_menu_handler); /* skip 'continue' item */
-}
 
 static void select_cell(void)
 {
@@ -427,20 +391,23 @@ static void select_cell(void)
       selection_pos = -1;
       
       rebuild_selectables();
+      // find caret pos
       if (caret_pos >= g_selectable->count)
 	caret_pos = g_selectable->count - 1;
       
-      main_repaint();
-      FullUpdate();
-
       if (finished())
 	{
-	  Dialog(ICON_INFORMATION, (char*)title, (char*)win_text, "OK", NULL, game_finished_dialog_handler);
+	  show_popup(&background, win_text, game_menu + 2, menu_handler);
 	}
       else if (!pair_exists(&g_board))
         {
-	  Dialog(ICON_INFORMATION, (char*)title, (char*)lose_text, "OK", NULL, game_finished_dialog_handler);
+	  show_popup(&background, lose_text, game_menu + 2, menu_handler);
         }
+      else
+	{
+	  main_repaint();
+	  FullUpdate();
+	}
     }
   else
     {
@@ -500,7 +467,7 @@ static int game_handler(int type, int par1, int par2)
 	case KEY_PREV:
 	case KEY_NEXT:
 	case KEY_MENU:
-	  show_popup_strict(game_menu, game_menu_handler);
+	  show_popup(NULL, NULL, game_menu, menu_handler);
 	  return 1;
 	}
       break;
@@ -509,24 +476,24 @@ static int game_handler(int type, int par1, int par2)
 }
 
 static imenu main_menu_en[] = {
-  { ITEM_HEADER, 0, "Mahjong", NULL },
   { ITEM_ACTIVE, 2, "New game (Easy)", NULL },
   { ITEM_ACTIVE, 3, "New game (Difficult)", NULL },
   { ITEM_ACTIVE, 4, "New game (Four Bridges)", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
   { ITEM_ACTIVE, 102, "Русский", NULL },
+  { ITEM_ACTIVE, 201, "Change screen orientation", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
   { ITEM_ACTIVE, 999, "Exit", NULL },
   { 0, 0, NULL, NULL }
 };
 
 static imenu main_menu_ru[] = {
-  { ITEM_HEADER, 0, "Маджонг", NULL },
   { ITEM_ACTIVE, 2, "Новая игра (Лёгкая)", NULL },
   { ITEM_ACTIVE, 3, "Новая игра (Тяжёлая)", NULL },
   { ITEM_ACTIVE, 4, "Новая игра (Четыре моста)", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
   { ITEM_ACTIVE, 101, "English", NULL },
+  { ITEM_ACTIVE, 201, "Сменить ориентацию экрана", NULL },
   { ITEM_SEPARATOR, 0, NULL, NULL },
   { ITEM_ACTIVE, 999, "Выход", NULL },
   { 0, 0, NULL, NULL }
@@ -534,44 +501,58 @@ static imenu main_menu_ru[] = {
 
 static imenu *main_menu = main_menu_en;
 
-static void main_menu_handler(int index)
+static void menu_handler(int index)
 {
   switch (index)
     {
-    case 2:
+    case 1: /*continue*/
+      SetEventHandler(game_handler);
+      break;
+
+    case 2:/*new standard*/
       init_map(&standard_map);
       SetEventHandler(game_handler);
       break;
-      
-    case 3:
+
+    case 3:/*new difficult*/
       init_map(&difficult_map);
       SetEventHandler(game_handler);
       break;
-      
-    case 4:
+
+    case 4:/*new bridges*/
       init_map(&four_bridges_map);
       SetEventHandler(game_handler);
       break;
-      
-    case 101:
+
+    case 101:/*lang: english*/
       main_menu = main_menu_en;
       game_menu = game_menu_en;
-      title = title_en;
       win_text = win_text_en;
       lose_text = lose_text_en;
-      show_popup_strict(main_menu, main_menu_handler);
+      show_popup(&background, NULL, main_menu, menu_handler);
       break;
       
-    case 102:
+    case 102:/*lang: russian*/
       main_menu = main_menu_ru;
       game_menu = game_menu_ru;
-      title = title_ru;
       win_text = win_text_ru;
       lose_text = lose_text_ru;
-      show_popup_strict(main_menu, main_menu_handler);
+      show_popup(&background, NULL, main_menu, menu_handler);
       break;
       
-    case 999:
+    case 201:/*change orientation*/
+      if (orientation == ROTATE270)
+        orientation = ROTATE90;
+      else
+        orientation = ROTATE270;
+      SetOrientation(orientation);
+      ClearScreen();
+      StretchBitmap(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (ibitmap*)&background, 0);
+      FullUpdate();
+      show_popup(&background, NULL, main_menu, menu_handler);
+      break;
+
+    case 999:/*exit*/
       CloseApp();
       break;
     }
@@ -579,17 +560,11 @@ static void main_menu_handler(int index)
 
 static int main_handler(int type, int par1, int par2)
 {
-  extern const ibitmap background;
-
   switch (type)
     {
     case EVT_INIT:
-      SetOrientation(ROTATE270);
-      ClearScreen();
-      StretchBitmap(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (ibitmap*)&background, 0);
-      FullUpdate();
-      
-      show_popup_strict(main_menu, main_menu_handler);
+      SetOrientation(orientation);
+      show_popup(&background, NULL, main_menu, menu_handler);
       break;
     case EVT_EXIT:
       /*
@@ -604,11 +579,10 @@ static int main_handler(int type, int par1, int par2)
 int main(int argc, char **argv)
 {
   srand(time(NULL));
-  
-  title = title_en;
+
   win_text = win_text_en;
   lose_text = lose_text_en;
-  
+
   bitmaps_init();
 	
   InkViewMain(main_handler);

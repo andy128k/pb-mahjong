@@ -202,48 +202,46 @@ static void main_repaint(void)
 static int move_left(void)
 {
   if (caret_pos > 0)
-    {
-      --caret_pos;
-      return 1;
-    }
-  return 0;
+    --caret_pos;
+  else
+    caret_pos = g_selectable->count - 1;
+  return 1;
 }
 
 static int move_right(void)
 {
   if (caret_pos < g_selectable->count - 1)
-    {
-      ++caret_pos;
-      return 1;
-    }
-  return 0;
+    ++caret_pos;
+  else
+    caret_pos = 0;
+  return 1;
 }
 
 static int move_up(void)
 {
   int i;
-  int min_dist = (MAX_ROW_COUNT + 1) * (MAX_COL_COUNT + 1);
+  int min_dist = INT_MAX;
   int new_pos = caret_pos;
 
   const position_t *caret = &g_selectable->positions[caret_pos];
-
+  const int caret_row = (caret->y - 1) / 2;
+  
   for (i = 0; i < g_selectable->count; ++i)
     if (i != caret_pos)
       {
 	const position_t *pos = &g_selectable->positions[i];
-	int dist;
-
-	if (caret->y <= pos->y)
-	  continue;
-
-	dist = abs((caret->y - 1) / 2 - (pos->y - 1) / 2) * MAX_COL_COUNT + abs(caret->x - pos->x);
+	int pos_row = (pos->y - 1) / 2;
+	if (caret_row <= pos_row)
+	  pos_row -= MAX_COL_COUNT;
+	
+	const int dist = abs(caret_row - pos_row) * MAX_COL_COUNT + abs(caret->x - pos->x);
 	if (dist < min_dist)
 	  {
 	    new_pos = i;
 	    min_dist = dist;
 	  }
       }
-
+  
   if (new_pos != caret_pos)
     {
       caret_pos = new_pos;
@@ -255,20 +253,21 @@ static int move_up(void)
 static int move_down(void)
 {
   int i;
-  int min_dist = (MAX_ROW_COUNT + 1) * (MAX_COL_COUNT + 1);
+  int min_dist = INT_MAX;
   int new_pos = caret_pos;
 
   const position_t *caret = &g_selectable->positions[caret_pos];
+  const int caret_row = (caret->y - 1) / 2;
 
   for (i = 0; i < g_selectable->count; ++i)
     if (i != caret_pos)
       {
 	const position_t *pos = &g_selectable->positions[i];
-	int dist;
-	if (caret->y >= pos->y)
-	  continue;
+        int pos_row = (pos->y - 1) / 2;
+	if (caret_row >= pos_row)
+	  pos_row += MAX_COL_COUNT;
 
-	dist = abs((caret->y - 1) / 2 - (pos->y - 1) / 2) * MAX_COL_COUNT + abs(caret->x - pos->x);
+	const int dist = abs(caret_row - pos_row) * MAX_COL_COUNT + abs(caret->x - pos->x);
 	if (dist < min_dist)
 	  {
 	    new_pos = i;

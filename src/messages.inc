@@ -26,6 +26,10 @@ MESSAGE(HINT,
 	"Hint",
 	"Подсказать")
 
+MESSAGE(UNDO,
+	"Undo",
+	"Отменить ход")
+
 MESSAGE(TOGGLE_LANGUAGE,
 	"Русский",
 	"English")

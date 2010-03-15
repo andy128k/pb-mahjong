@@ -35,6 +35,13 @@ static void menu_handler(int index);
 static void read_state(void);
 static void write_state(void);
 
+static struct
+{
+  position_t positions[144];
+  chip_t chips[144];
+  int count;
+} undo_stack;
+
 static int cmp_pos(const void *p1, const void *p2)
 {
   const position_t* pos1 = p1;
@@ -55,8 +62,36 @@ static void rebuild_selectables(void)
   help_offset = 0;
 }
 
+static void undo()
+{
+  int i;
+
+  if (undo_stack.count == 0)
+    return;
+
+  for (i = 0; i < 2; ++i)
+    {
+      board_set( &g_board, &undo_stack.positions[undo_stack.count - 1], undo_stack.chips[undo_stack.count - 1]);
+      --undo_stack.count;
+    }
+
+  selection_pos = -1;
+  rebuild_selectables();
+
+  // find caret pos
+  if (caret_pos >= g_selectable->count)
+    caret_pos = g_selectable->count - 1;
+}
+
+static void clear_undo_stack()
+{
+  undo_stack.count = 0;
+}
+
 static void init_map(map_t *map)
 {
+  clear_undo_stack();
+
   generate_board(&g_board, map);
   row_count = map->row_count;
   col_count = map->col_count;
@@ -395,6 +430,7 @@ static int pair_exists(board_t *board)
 static message_id game_menu[] = {
   MSG_CONTINUE,
   MSG_HINT,
+  MSG_UNDO,
   MSG_SEPARATOR,
   MSG_NEW_GAME_EASY,
   MSG_NEW_GAME_DIFFICULT,
@@ -416,10 +452,18 @@ static void select_cell(void)
       return;
     }
 
-  if (selection_pos >= 0
-      && fits( board_get(&g_board, &g_selectable->positions[selection_pos]),
-	       board_get(&g_board, &g_selectable->positions[caret_pos])))
+  const chip_t chip1 = selection_pos >= 0 ? board_get(&g_board, &g_selectable->positions[selection_pos]) : 0;
+  const chip_t chip2 = board_get(&g_board, &g_selectable->positions[caret_pos]);
+
+  if (chip1 != 0 && fits(chip1, chip2))
     {
+      undo_stack.positions[undo_stack.count] = g_selectable->positions[selection_pos];
+      undo_stack.chips[undo_stack.count] = chip1;
+      ++undo_stack.count;
+      undo_stack.positions[undo_stack.count] = g_selectable->positions[caret_pos];
+      undo_stack.chips[undo_stack.count] = chip2;
+      ++undo_stack.count;
+
       board_set( &g_board, &g_selectable->positions[selection_pos], 0);
       board_set( &g_board, &g_selectable->positions[caret_pos], 0);
 
@@ -441,10 +485,12 @@ static void select_cell(void)
 
       if (finished())
 	{
+	  clear_undo_stack();
 	  show_popup(&background, MSG_WIN, finish_menu, menu_handler);
 	}
       else if (!pair_exists(&g_board))
         {
+	  clear_undo_stack();
 	  show_popup(&background, MSG_LOSE, finish_menu, menu_handler);
         }
       else
@@ -571,6 +617,11 @@ static void menu_handler(int index)
 
     case MSG_HINT:
       make_hint();
+      SetEventHandler(game_handler);
+      break;
+
+    case MSG_UNDO:
+      undo();
       SetEventHandler(game_handler);
       break;
 

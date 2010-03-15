@@ -1,6 +1,6 @@
 #include "menu.h"
 
-#define MENU_FONT_NAME ("")
+#define MENU_FONT_NAME (DEFAULTFONT)
 #define MENU_FONT_SIZE (18)
 #define MENU_MARGIN (10)
 #define MENU_ITEM_HEIGHT (30)
@@ -8,9 +8,9 @@
 
 typedef struct {
   const ibitmap *background;
-  const char *message;
+  message_id message;
 
-  imenu *items;
+  message_id *items;
   int count;
   iv_menuhandler proc;
   int current;
@@ -19,7 +19,7 @@ typedef struct {
   int x, y, w, h;
 } menu_t;
 
-static ifont *g_menu_font;
+static ifont *g_menu_font = NULL;
 static ifont *get_menu_font(void)
 {
   if (g_menu_font == NULL)
@@ -40,9 +40,9 @@ void menu_calc(menu_t *menu)
   menu->h = 0;
   for (i = 0; i < menu->count; ++i)
     {
-      if (menu->items[i].type == ITEM_ACTIVE)
+      if (menu->items[i] > MSG_NONE)
 	{
-	  const int lw = StringWidth(menu->items[i].text);
+	  const int lw = StringWidth((char*)get_message(menu->items[i]));
 	  if (lw > menu->w)
 	    menu->w = lw;
 	  menu->h += MENU_ITEM_HEIGHT;
@@ -52,7 +52,7 @@ void menu_calc(menu_t *menu)
 	  menu->h += MENU_SEPARATOR_HEIGHT;
 	}
     }
-  
+
   menu->x = (ScreenWidth() - menu->w - 2 * MENU_MARGIN) / 2 + MENU_MARGIN;
   menu->y = ScreenHeight() - menu->h - MENU_MARGIN - 30;
 }
@@ -65,32 +65,32 @@ static void draw_popup(menu_t *menu)
 
   SetFont(get_menu_font(), BLACK);
 
-  FillArea(menu->x - MENU_MARGIN, 
-	   menu->y - MENU_MARGIN, 
-	   menu->w + 2 * MENU_MARGIN, 
-	   menu->h + 2 * MENU_MARGIN, 
+  FillArea(menu->x - MENU_MARGIN,
+	   menu->y - MENU_MARGIN,
+	   menu->w + 2 * MENU_MARGIN,
+	   menu->h + 2 * MENU_MARGIN,
 	   WHITE);
-  DrawRect(menu->x - MENU_MARGIN, 
-	   menu->y - MENU_MARGIN, 
-	   menu->w + 2 * MENU_MARGIN, 
-	   menu->h + 2 * MENU_MARGIN, 
+  DrawRect(menu->x - MENU_MARGIN,
+	   menu->y - MENU_MARGIN,
+	   menu->w + 2 * MENU_MARGIN,
+	   menu->h + 2 * MENU_MARGIN,
 	   BLACK);
 
   y = menu->y;
   for (i = 0; i < menu->count; ++i)
     {
-      if (menu->items[i].type == ITEM_ACTIVE)
+      if (menu->items[i] > MSG_NONE)
 	{
-	  DrawTextRect(menu->x, 
+	  DrawTextRect(menu->x,
 		       y,
 		       menu->w,
-		       MENU_ITEM_HEIGHT, 
-		       menu->items[i].text, 
+		       MENU_ITEM_HEIGHT,
+		       (char*)get_message(menu->items[i]),
 		       ALIGN_LEFT | VALIGN_MIDDLE);
 
 	  if (i == menu->current)
 	    DrawSelection(menu->x - 5, y, menu->w + 10, MENU_ITEM_HEIGHT, DGRAY);
-	  
+
 	  y += MENU_ITEM_HEIGHT;
 	}
       else /*separator*/
@@ -119,11 +119,11 @@ static int menu_handler(int type, int par1, int par2)
   switch (type)
     {
     case EVT_SHOW:
-      if (menu->background != NULL || menu->message != NULL)
+      if (menu->background != NULL || menu->message != MSG_NONE)
 	ClearScreen();
       if (menu->background != NULL)
 	StretchBitmap(0, 0, ScreenWidth(), ScreenHeight(), (ibitmap*)menu->background, 0);
-      if (menu->message != NULL)
+      if (menu->message != MSG_NONE)
 	{
 	  const int x_margin = 100;
 	  const int y_margin = 130;
@@ -133,12 +133,12 @@ static int menu_handler(int type, int par1, int par2)
 
 	  ifont *font = OpenFont(MENU_FONT_NAME, 40, 1);
 	  SetFont(font, BLACK);
-	  DrawTextRect(x_margin, y_margin, ScreenWidth() - 2 * x_margin, height, (char*)menu->message, ALIGN_CENTER | VALIGN_MIDDLE);
-	  
+	  DrawTextRect(x_margin, y_margin, ScreenWidth() - 2 * x_margin, height, (char*)get_message(menu->message), ALIGN_CENTER | VALIGN_MIDDLE);
+
 	  CloseFont(font);
 	}
       draw_popup(menu);
-      if (menu->background != NULL || menu->message != NULL)
+      if (menu->background != NULL || menu->message != MSG_NONE)
 	FullUpdate();
       else
 	menu_update(menu);
@@ -151,7 +151,7 @@ static int menu_handler(int type, int par1, int par2)
 	    {
 	      menu->current = (menu->current + menu->count - 1) % menu->count;
 	    }
-	  while (menu->items[menu->current].type != ITEM_ACTIVE);
+	  while (menu->items[menu->current] <= MSG_NONE);
 
 	  draw_popup(menu);
 	  menu_update(menu);
@@ -161,13 +161,13 @@ static int menu_handler(int type, int par1, int par2)
 	    {
 	      menu->current = (menu->current + 1) % menu->count;
 	    }
-	  while (menu->items[menu->current].type != ITEM_ACTIVE);
+	  while (menu->items[menu->current] <= MSG_NONE);
 
 	  draw_popup(menu);
 	  menu_update(menu);
 	  break;
 	case KEY_OK:
-	  menu->proc( menu->items[menu->current].index );
+	  menu->proc(menu->items[menu->current]);
 	  break;
 	}
       break;
@@ -175,7 +175,7 @@ static int menu_handler(int type, int par1, int par2)
   return 0;
 }
 
-void show_popup(const ibitmap* background, const char* message, imenu *items, iv_menuhandler hproc)
+void show_popup(const ibitmap* background, message_id message, message_id *items, iv_menuhandler hproc)
 {
   menu_t *menu = &g_menu1;
 
@@ -184,11 +184,11 @@ void show_popup(const ibitmap* background, const char* message, imenu *items, iv
   menu->message = message;
   menu->items = items;
   menu->count = 0;
-  while (items[menu->count].type != 0)
+  while (items[menu->count] != MSG_NONE)
     ++menu->count;
   menu->proc = hproc;
   menu->current = 0;
-      
+
   SetEventHandler(menu_handler);
 }
 

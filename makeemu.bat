@@ -17,7 +17,7 @@ pbres -c %IMAGES% images/*.bmp
 if errorlevel 1 goto L_ER
 :NOIMG
 
-gcc -g3 -static -Wall -O2 -fomit-frame-pointer %INCLUDE% -o %OUTPUT% src/*.c %IMAGES% %LIBS%
+gcc -g3 -static -Wall -O2 -fomit-frame-pointer %INCLUDE% -o %OUTPUT% -DEMULATION=1 src/*.c %IMAGES% %LIBS%
 if errorlevel 1 goto L_ER
 
 pause

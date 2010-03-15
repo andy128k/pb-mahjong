@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <regex.h>
 #include "inkview.h"
 
 #include "common.h"
@@ -9,6 +10,12 @@
 #include "bitmaps.h"
 #include "geometry.h"
 #include "menu.h"
+#include "messages.h"
+
+#ifdef EMULATION
+#undef STATEPATH
+#define STATEPATH "."
+#endif
 
 static int orientation = ROTATE270;
 static board_t g_board;
@@ -17,10 +24,16 @@ static int col_count;
 static int caret_pos;
 static int selection_pos = -1;
 static positions_t* g_selectable = NULL;
+static int help_index = 0;
+static int help_offset = 0;
 
 extern const ibitmap background;
 
+#define HELP_HEIGHT (20)
+
 static void menu_handler(int index);
+static void read_state(void);
+static void write_state(void);
 
 static int cmp_pos(const void *p1, const void *p2)
 {
@@ -34,9 +47,12 @@ static void rebuild_selectables(void)
 {
   if (g_selectable != NULL)
     free(g_selectable);
-  
+
   g_selectable = get_selectable_positions(&g_board);
   qsort(&g_selectable->positions[0], g_selectable->count, sizeof(position_t), cmp_pos);
+
+  help_index = 0;
+  help_offset = 0;
 }
 
 static void init_map(map_t *map)
@@ -47,6 +63,7 @@ static void init_map(map_t *map)
 
   rebuild_selectables();
   caret_pos = 0;
+  selection_pos = -1;
 }
 
 static int fits(chip_t a, chip_t b)
@@ -68,7 +85,7 @@ static void cell_rect(const position_t *pos, struct rect* r)
 #define IMG_HEIGHT (79)
 
   const int screen_width = ScreenWidth();
-  const int screen_height = ScreenHeight();
+  const int screen_height = ScreenHeight() - HELP_HEIGHT;
   int offset_x;
   int offset_y;
 
@@ -119,12 +136,12 @@ static void draw_chip(const position_t *pos, chip_t chip)
   DrawLine(r.x-4, r.y-4, r.x, r.y, DGRAY);
   DrawLine(r.x-4+r.w-1, r.y-4, r.x+r.w-1, r.y, DGRAY);
   DrawLine(r.x-4, r.y-4+r.h-1, r.x, r.y+r.h-1, DGRAY);
-	
+
   FillArea(r.x, r.y, r.w, r.h, WHITE);
   DrawRect(r.x, r.y, r.w, r.h, DGRAY);
 
   StretchBitmap(r.x+1, r.y+1, r.w-2, r.h-2, (ibitmap*)bitmaps[chip], 0);
-	
+
   if (caret_pos >= 0 && caret_pos < g_selectable->count)
     {
       if (position_equal(pos, &g_selectable->positions[caret_pos]))
@@ -161,6 +178,14 @@ static int is_covered_by(const void *p1, const void *p2)
   return 0;
 }
 
+static ifont *g_help_font = NULL;
+static ifont *get_help_font(void)
+{
+  if (g_help_font == NULL)
+    g_help_font = OpenFont(DEFAULTFONTB, 16, 1);
+  return g_help_font;
+}
+
 static void main_repaint(void)
 {
   int i, j, k;
@@ -183,20 +208,51 @@ static void main_repaint(void)
   topological_sort(chips, chip_count, sizeof(position_t), is_covered_by);
 
   ClearScreen();
-  
+
   for (i = chip_count - 1; i >=0; --i)
     {
       const position_t *pos = &chips[i];
       draw_chip(pos, board_get(&g_board, pos));
     }
-  
-  /* help */
-  /*
+
+  /* status bar */
   {
-    int h = 20;
-    DrawTextRect(0, SCREEN_HEIGHT - 20, SCREEN_WIDTH, h, "←, ↑, →, ↓ - выбор, OK - afas", ALIGN_FIT | ALIGN_CENTER);
+    struct rect r;
+    r.x = 0;
+    r.y = ScreenHeight() - HELP_HEIGHT;
+    r.w = ScreenWidth();
+    r.h = HELP_HEIGHT;
+
+    DrawLine(r.x, r.y, r.x + r.w, r.y, BLACK);
+    FillArea(r.x, r.y + 2, r.w, r.h - 2, DGRAY);
+
+    SetFont(get_help_font(), WHITE);
+
+    r.x += 10;
+    r.w -= 20;
+    r.y += 2;
+    r.h -= 2;
+
+    {
+      int pairs = 0;
+      for (i = 0; i < g_selectable->count - 1; ++i)
+	{
+	  const chip_t chip1 = board_get(&g_board, &g_selectable->positions[i]);
+	  for (j = i + 1; j < g_selectable->count; ++j)
+	    {
+	      const chip_t chip2 = board_get(&g_board, &g_selectable->positions[j]);
+	      if (fits(chip1, chip2))
+		++pairs;
+	    }
+	}
+
+      char buffer[256];
+      snprintf(buffer, 256, get_message(MSG_MOVES_LEFT), pairs);
+      DrawTextRect(r.x, r.y, r.w, r.h, buffer, ALIGN_FIT | ALIGN_LEFT);
+    }
+
+    DrawTextRect(r.x, r.y, r.w, r.h, (char*)get_message(MSG_HELP), ALIGN_FIT | ALIGN_RIGHT);
   }
-  */
 }
 
 static int move_left(void)
@@ -225,7 +281,7 @@ static int move_up(void)
 
   const position_t *caret = &g_selectable->positions[caret_pos];
   const int caret_row = (caret->y - 1) / 2;
-  
+
   for (i = 0; i < g_selectable->count; ++i)
     if (i != caret_pos)
       {
@@ -233,7 +289,7 @@ static int move_up(void)
 	int pos_row = (pos->y - 1) / 2;
 	if (caret_row <= pos_row)
 	  pos_row -= MAX_COL_COUNT;
-	
+
 	const int dist = abs(caret_row - pos_row) * MAX_COL_COUNT + abs(caret->x - pos->x);
 	if (dist < min_dist)
 	  {
@@ -241,7 +297,7 @@ static int move_up(void)
 	    min_dist = dist;
 	  }
       }
-  
+
   if (new_pos != caret_pos)
     {
       caret_pos = new_pos;
@@ -336,37 +392,17 @@ static int pair_exists(board_t *board)
   return 0;
 }
 
-static imenu game_menu_en[] = {
-  { ITEM_ACTIVE, 1, "Continue", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 2, "New game (Easy)", NULL },
-  { ITEM_ACTIVE, 3, "New game (Difficult)", NULL },
-  { ITEM_ACTIVE, 4, "New game (Four Bridges)", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 999, "Exit", NULL },
-  { 0, 0, NULL, NULL }
+static message_id game_menu[] = {
+  MSG_CONTINUE,
+  MSG_HINT,
+  MSG_SEPARATOR,
+  MSG_NEW_GAME_EASY,
+  MSG_NEW_GAME_DIFFICULT,
+  MSG_NEW_GAME_FOUR_BRIDGES,
+  MSG_SEPARATOR,
+  MSG_EXIT,
+  MSG_NONE
 };
-
-static imenu game_menu_ru[] = {
-  { ITEM_ACTIVE, 1, "Продолжить", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 2, "Новая игра (Лёгкая)", NULL },
-  { ITEM_ACTIVE, 3, "Новая игра (Тяжёлая)", NULL },
-  { ITEM_ACTIVE, 4, "Новая игра (Четыре моста)", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 999, "Выход", NULL },
-  { 0, 0, NULL, NULL }
-};
-
-static imenu *game_menu = game_menu_en;
-
-static const char * const win_text_en = "Solitaire is solved. Congratulations!";
-static const char * const win_text_ru = "Пасьянс решён. Поздравляем!";
-static const char *win_text;
-
-static const char * const lose_text_en = "There is no more free pair. You lose";
-static const char * const lose_text_ru = "Свободных пар больше нет. Вы проиграли.";
-static const char *lose_text;
 
 static void select_cell(void)
 {
@@ -379,28 +415,37 @@ static void select_cell(void)
       PartialUpdate(r.x, r.y, r.w, r.h);
       return;
     }
-  
+
   if (selection_pos >= 0
       && fits( board_get(&g_board, &g_selectable->positions[selection_pos]),
 	       board_get(&g_board, &g_selectable->positions[caret_pos])))
     {
       board_set( &g_board, &g_selectable->positions[selection_pos], 0);
       board_set( &g_board, &g_selectable->positions[caret_pos], 0);
-      
+
       selection_pos = -1;
-      
+
       rebuild_selectables();
       // find caret pos
       if (caret_pos >= g_selectable->count)
 	caret_pos = g_selectable->count - 1;
-      
+
+      static message_id finish_menu[] = {
+	MSG_NEW_GAME_EASY,
+	MSG_NEW_GAME_DIFFICULT,
+	MSG_NEW_GAME_FOUR_BRIDGES,
+	MSG_SEPARATOR,
+	MSG_EXIT,
+	MSG_NONE
+      };
+
       if (finished())
 	{
-	  show_popup(&background, win_text, game_menu + 2, menu_handler);
+	  show_popup(&background, MSG_WIN, finish_menu, menu_handler);
 	}
       else if (!pair_exists(&g_board))
         {
-	  show_popup(&background, lose_text, game_menu + 2, menu_handler);
+	  show_popup(&background, MSG_LOSE, finish_menu, menu_handler);
         }
       else
 	{
@@ -417,17 +462,17 @@ static void select_cell(void)
       main_repaint();
 
       cell_rect(&g_selectable->positions[selection_pos], &r);
-		
+
       if (prev_selection_pos != -1)
 	{
 	  struct rect r1;
 	  struct rect r2;
-			
+
 	  r1 = r;
 	  cell_rect(&g_selectable->positions[prev_selection_pos], &r2);
 	  union_rect(&r1, &r2, &r);
 	}
-      
+
       PartialUpdate(r.x, r.y, r.w, r.h);
     }
 }
@@ -441,7 +486,7 @@ static int game_handler(int type, int par1, int par2)
       FullUpdate();
       break;
     case EVT_KEYPRESS:
-      switch (par1) 
+      switch (par1)
 	{
 	case KEY_OK:
 	  select_cell();
@@ -466,7 +511,7 @@ static int game_handler(int type, int par1, int par2)
 	case KEY_PREV:
 	case KEY_NEXT:
 	case KEY_MENU:
-	  show_popup(NULL, NULL, game_menu, menu_handler);
+	  show_popup(NULL, MSG_NONE, game_menu, menu_handler);
 	  return 1;
 	}
       break;
@@ -474,72 +519,85 @@ static int game_handler(int type, int par1, int par2)
   return 0;
 }
 
-static imenu main_menu_en[] = {
-  { ITEM_ACTIVE, 2, "New game (Easy)", NULL },
-  { ITEM_ACTIVE, 3, "New game (Difficult)", NULL },
-  { ITEM_ACTIVE, 4, "New game (Four Bridges)", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 102, "Русский", NULL },
-  { ITEM_ACTIVE, 201, "Change screen orientation", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 999, "Exit", NULL },
-  { 0, 0, NULL, NULL }
+static message_id main_menu[] = {
+  MSG_NEW_GAME_EASY,
+  MSG_NEW_GAME_DIFFICULT,
+  MSG_NEW_GAME_FOUR_BRIDGES,
+  MSG_SEPARATOR,
+  MSG_TOGGLE_LANGUAGE,
+  MSG_CHANGE_ORIENTATION,
+  MSG_SEPARATOR,
+  MSG_EXIT,
+  MSG_NONE
 };
 
-static imenu main_menu_ru[] = {
-  { ITEM_ACTIVE, 2, "Новая игра (Лёгкая)", NULL },
-  { ITEM_ACTIVE, 3, "Новая игра (Тяжёлая)", NULL },
-  { ITEM_ACTIVE, 4, "Новая игра (Четыре моста)", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 101, "English", NULL },
-  { ITEM_ACTIVE, 201, "Сменить ориентацию экрана", NULL },
-  { ITEM_SEPARATOR, 0, NULL, NULL },
-  { ITEM_ACTIVE, 999, "Выход", NULL },
-  { 0, 0, NULL, NULL }
-};
+static void make_hint(void)
+{
+  int i, j;
 
-static imenu *main_menu = main_menu_en;
+  while (1)
+    {
+      for (i = help_index; i < g_selectable->count - 1; ++i)
+	{
+	  const chip_t chip1 = board_get(&g_board, &g_selectable->positions[i]);
+
+	  for (j = i + 1 + help_offset; j < g_selectable->count; ++j)
+	    {
+	      const chip_t chip2 = board_get(&g_board, &g_selectable->positions[j]);
+
+	      if (fits(chip1, chip2))
+		{
+		  help_index = i;
+		  help_offset = j - i - 1 + 1;
+		  selection_pos = i;
+		  caret_pos = j;
+		  return;
+		}
+	    }
+	  help_offset = 0;
+	}
+      help_index = 0;
+      help_offset = 0;
+    }
+}
 
 static void menu_handler(int index)
 {
   switch (index)
     {
-    case 1: /*continue*/
+    case MSG_CONTINUE:
       SetEventHandler(game_handler);
       break;
 
-    case 2:/*new standard*/
+    case MSG_HINT:
+      make_hint();
+      SetEventHandler(game_handler);
+      break;
+
+    case MSG_NEW_GAME_EASY:
       init_map(&standard_map);
       SetEventHandler(game_handler);
       break;
 
-    case 3:/*new difficult*/
+    case MSG_NEW_GAME_DIFFICULT:
       init_map(&difficult_map);
       SetEventHandler(game_handler);
       break;
 
-    case 4:/*new bridges*/
+    case MSG_NEW_GAME_FOUR_BRIDGES:
       init_map(&four_bridges_map);
       SetEventHandler(game_handler);
       break;
 
-    case 101:/*lang: english*/
-      main_menu = main_menu_en;
-      game_menu = game_menu_en;
-      win_text = win_text_en;
-      lose_text = lose_text_en;
-      show_popup(&background, NULL, main_menu, menu_handler);
+    case MSG_TOGGLE_LANGUAGE:
+      if (current_language == ENGLISH)
+	current_language = RUSSIAN;
+      else
+	current_language = ENGLISH;
+      show_popup(&background, MSG_NONE, main_menu, menu_handler);
       break;
-      
-    case 102:/*lang: russian*/
-      main_menu = main_menu_ru;
-      game_menu = game_menu_ru;
-      win_text = win_text_ru;
-      lose_text = lose_text_ru;
-      show_popup(&background, NULL, main_menu, menu_handler);
-      break;
-      
-    case 201:/*change orientation*/
+
+    case MSG_CHANGE_ORIENTATION:
       if (orientation == ROTATE270)
         orientation = ROTATE90;
       else
@@ -548,10 +606,11 @@ static void menu_handler(int index)
       ClearScreen();
       StretchBitmap(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, (ibitmap*)&background, 0);
       FullUpdate();
-      show_popup(&background, NULL, main_menu, menu_handler);
+      show_popup(&background, MSG_NONE, main_menu, menu_handler);
       break;
 
-    case 999:/*exit*/
+    case MSG_EXIT:
+      write_state();
       CloseApp();
       break;
     }
@@ -562,8 +621,11 @@ static int main_handler(int type, int par1, int par2)
   switch (type)
     {
     case EVT_INIT:
+      srand(time(NULL));
+      bitmaps_init();
+      read_state();
       SetOrientation(orientation);
-      show_popup(&background, NULL, main_menu, menu_handler);
+      show_popup(&background, MSG_NONE, main_menu, menu_handler);
       break;
     case EVT_EXIT:
       /*
@@ -575,15 +637,70 @@ static int main_handler(int type, int par1, int par2)
   return 0;
 }
 
+static void read_state(void)
+{
+  FILE * f = fopen(STATEPATH "/pb-mahjong", "r");
+  if (!f)
+    return;
+
+  regex_t reg;
+  regcomp(&reg, "^([a-z]+)([ \t]*)=([ \t]*)([^ \t\r\n]+)", REG_EXTENDED);
+
+  char line[128];
+  regmatch_t pmatch[16];
+
+  while (fgets(line, sizeof(line), f))
+    {
+      if (regexec(&reg, line, 16, pmatch, 0))
+	continue;
+
+      const char * key = &line[pmatch[1].rm_so];
+      line[pmatch[1].rm_eo] = '\0';
+
+      const char * value = &line[pmatch[4].rm_so];
+      line[pmatch[4].rm_eo] = '\0';
+
+      if (!strcmp(key, "language"))
+	{
+	  if (!strcmp(value, "en"))
+	    current_language = ENGLISH;
+	  else if (!strcmp(value, "ru"))
+	    current_language = RUSSIAN;
+	}
+      else if (!strcmp(key, "orientation"))
+	{
+	  if (!strcmp(value, "90"))
+	    orientation = ROTATE90;
+	  else if (!strcmp(value, "270"))
+	    orientation = ROTATE270;
+	}
+    }
+  fclose(f);
+
+  regfree(&reg);
+}
+
+static void write_state(void)
+{
+  FILE * f = fopen(STATEPATH "/pb-mahjong", "w");
+  if (!f)
+    return;
+
+  if (current_language == ENGLISH)
+    fprintf(f, "language = en\n");
+  else if (current_language == RUSSIAN)
+    fprintf(f, "language = ru\n");
+
+  if (orientation == ROTATE90)
+    fprintf(f, "orientation = 90\n");
+  else if (orientation == ROTATE270)
+    fprintf(f, "orientation = 270\n");
+
+  fclose(f);
+}
+
 int main(int argc, char **argv)
 {
-  srand(time(NULL));
-
-  win_text = win_text_en;
-  lose_text = lose_text_en;
-
-  bitmaps_init();
-	
   InkViewMain(main_handler);
   return 0;
 }

@@ -2,8 +2,9 @@
 #define MENU_H
 
 #include "inkview.h"
+#include "messages.h"
 
-void show_popup(const ibitmap* background, const char* message, imenu *menu, iv_menuhandler hproc);
+extern void show_popup(const ibitmap* background, message_id message, message_id *menu, iv_menuhandler hproc);
 
 #endif
 

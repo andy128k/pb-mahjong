@@ -10,6 +10,10 @@ MESSAGE(NEW_GAME_FOUR_BRIDGES,
 	"New game (Four Bridges)",
 	"Новая игра (Четыре моста)")
 
+MESSAGE(LOAD,
+	"Load game",
+	"Загрузить игру")
+
 MESSAGE(EXIT,
 	"Exit",
 	"Выход")

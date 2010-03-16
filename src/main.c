@@ -1,3 +1,4 @@
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -17,6 +18,8 @@
 #define STATEPATH "."
 #endif
 
+#define SAVED_GAME_PATH (STATEPATH "/pb-mahjong.saved-game")
+
 static int orientation = ROTATE270;
 static board_t g_board;
 static int row_count;
@@ -26,6 +29,7 @@ static int selection_pos = -1;
 static positions_t* g_selectable = NULL;
 static int help_index = 0;
 static int help_offset = 0;
+static int game_active = 0;
 
 extern const ibitmap background;
 
@@ -34,6 +38,8 @@ extern const ibitmap background;
 static void menu_handler(int index);
 static void read_state(void);
 static void write_state(void);
+static int load_game(void);
+static void save_game(void);
 
 static struct
 {
@@ -88,6 +94,15 @@ static void clear_undo_stack()
   undo_stack.count = 0;
 }
 
+static void start_game(void)
+{
+  rebuild_selectables();
+  caret_pos = 0;
+  selection_pos = -1;
+  game_active = 1;
+  unlink(SAVED_GAME_PATH);
+}
+
 static void init_map(map_t *map)
 {
   clear_undo_stack();
@@ -96,9 +111,7 @@ static void init_map(map_t *map)
   row_count = map->row_count;
   col_count = map->col_count;
 
-  rebuild_selectables();
-  caret_pos = 0;
-  selection_pos = -1;
+  start_game();
 }
 
 static int fits(chip_t a, chip_t b)
@@ -427,19 +440,6 @@ static int pair_exists(board_t *board)
   return 0;
 }
 
-static message_id game_menu[] = {
-  MSG_CONTINUE,
-  MSG_HINT,
-  MSG_UNDO,
-  MSG_SEPARATOR,
-  MSG_NEW_GAME_EASY,
-  MSG_NEW_GAME_DIFFICULT,
-  MSG_NEW_GAME_FOUR_BRIDGES,
-  MSG_SEPARATOR,
-  MSG_EXIT,
-  MSG_NONE
-};
-
 static void select_cell(void)
 {
   if (selection_pos == caret_pos)
@@ -485,11 +485,13 @@ static void select_cell(void)
 
       if (finished())
 	{
+	  game_active = 0;
 	  clear_undo_stack();
 	  show_popup(&background, MSG_WIN, finish_menu, menu_handler);
 	}
       else if (!pair_exists(&g_board))
         {
+	  game_active = 0;
 	  clear_undo_stack();
 	  show_popup(&background, MSG_LOSE, finish_menu, menu_handler);
         }
@@ -557,25 +559,42 @@ static int game_handler(int type, int par1, int par2)
 	case KEY_PREV:
 	case KEY_NEXT:
 	case KEY_MENU:
-	  show_popup(NULL, MSG_NONE, game_menu, menu_handler);
-	  return 1;
+	  {
+	    static message_id game_menu[] = {
+	      MSG_CONTINUE,
+	      MSG_HINT,
+	      MSG_SEPARATOR,
+	      MSG_NEW_GAME_EASY,
+	      MSG_NEW_GAME_DIFFICULT,
+	      MSG_NEW_GAME_FOUR_BRIDGES,
+	      MSG_SEPARATOR,
+	      MSG_EXIT,
+	      MSG_NONE
+	    };
+
+	    static message_id game_menu_with_undo[] = {
+	      MSG_CONTINUE,
+	      MSG_HINT,
+	      MSG_UNDO,
+	      MSG_SEPARATOR,
+	      MSG_NEW_GAME_EASY,
+	      MSG_NEW_GAME_DIFFICULT,
+	      MSG_NEW_GAME_FOUR_BRIDGES,
+	      MSG_SEPARATOR,
+	      MSG_EXIT,
+	      MSG_NONE
+	    };
+	    if (undo_stack.count != 0)
+	      show_popup(NULL, MSG_NONE, game_menu_with_undo, menu_handler);
+	    else
+	      show_popup(NULL, MSG_NONE, game_menu, menu_handler);
+	    return 1;
+	  }
 	}
       break;
     }
   return 0;
 }
-
-static message_id main_menu[] = {
-  MSG_NEW_GAME_EASY,
-  MSG_NEW_GAME_DIFFICULT,
-  MSG_NEW_GAME_FOUR_BRIDGES,
-  MSG_SEPARATOR,
-  MSG_TOGGLE_LANGUAGE,
-  MSG_CHANGE_ORIENTATION,
-  MSG_SEPARATOR,
-  MSG_EXIT,
-  MSG_NONE
-};
 
 static void make_hint(void)
 {
@@ -606,6 +625,34 @@ static void make_hint(void)
       help_offset = 0;
     }
 }
+
+static message_id main_menu_wo_load[] = {
+  MSG_NEW_GAME_EASY,
+  MSG_NEW_GAME_DIFFICULT,
+  MSG_NEW_GAME_FOUR_BRIDGES,
+  MSG_SEPARATOR,
+  MSG_TOGGLE_LANGUAGE,
+  MSG_CHANGE_ORIENTATION,
+  MSG_SEPARATOR,
+  MSG_EXIT,
+  MSG_NONE
+};
+
+static message_id main_menu_w_load[] = {
+  MSG_NEW_GAME_EASY,
+  MSG_NEW_GAME_DIFFICULT,
+  MSG_NEW_GAME_FOUR_BRIDGES,
+  MSG_SEPARATOR,
+  MSG_LOAD,
+  MSG_SEPARATOR,
+  MSG_TOGGLE_LANGUAGE,
+  MSG_CHANGE_ORIENTATION,
+  MSG_SEPARATOR,
+  MSG_EXIT,
+  MSG_NONE
+};
+
+static message_id *main_menu;
 
 static void menu_handler(int index)
 {
@@ -640,6 +687,14 @@ static void menu_handler(int index)
       SetEventHandler(game_handler);
       break;
 
+    case MSG_LOAD:
+      if (load_game())
+	{
+ 	  start_game();
+	  SetEventHandler(game_handler);
+	}
+      break;
+
     case MSG_TOGGLE_LANGUAGE:
       if (current_language == ENGLISH)
 	current_language = RUSSIAN;
@@ -662,6 +717,8 @@ static void menu_handler(int index)
 
     case MSG_EXIT:
       write_state();
+      if (game_active)
+	save_game();
       CloseApp();
       break;
     }
@@ -676,13 +733,17 @@ static int main_handler(int type, int par1, int par2)
       bitmaps_init();
       read_state();
       SetOrientation(orientation);
+
+      if (!access(SAVED_GAME_PATH, R_OK))
+	main_menu = main_menu_w_load;
+      else
+	main_menu = main_menu_wo_load;
+      
       show_popup(&background, MSG_NONE, main_menu, menu_handler);
       break;
     case EVT_EXIT:
-      /*
-	occurs only in main handler when exiting or when SIGINT received.
-	save configuration here, if needed
-      */
+      if (game_active)
+	save_game();
       break;
     }
   return 0;
@@ -746,6 +807,79 @@ static void write_state(void)
     fprintf(f, "orientation = 90\n");
   else if (orientation == ROTATE270)
     fprintf(f, "orientation = 270\n");
+
+  fclose(f);
+}
+
+static int load_game(void)
+{
+  int i, j, k;
+
+  FILE * f = fopen(SAVED_GAME_PATH, "r");
+  if (!f)
+    return 0;
+
+  fscanf(f, "%d %d\n", &row_count, &col_count);
+
+  for (i = 0; i < MAX_ROW_COUNT; ++i)
+    for (j = 0; j < MAX_COL_COUNT; ++j)
+      for (k = 0; k < MAX_HEIGHT; ++k)
+	{
+	  int ch;
+	  position_t pos;
+	  pos.y = i;
+	  pos.x = j;
+	  pos.k = k;
+
+	  fscanf(f, "%d\n", &ch);
+
+	  board_set(&g_board, &pos, ch);
+	}
+
+  fscanf(f, "%d\n", &undo_stack.count);
+  for (i = 0; i < undo_stack.count; ++i)
+    fscanf(f, "%d %d %d %d\n",
+	   &undo_stack.positions[i].y,
+	   &undo_stack.positions[i].x,
+	   &undo_stack.positions[i].k,
+	   &undo_stack.chips[i]);
+
+  fclose(f);
+
+  return 1;
+}
+
+static void save_game(void)
+{
+  int i, j, k;
+
+  FILE * f = fopen(SAVED_GAME_PATH, "w");
+  if (!f)
+    return;
+
+  fprintf(f, "%d %d\n", row_count, col_count);
+
+  for (i = 0; i < MAX_ROW_COUNT; ++i)
+    for (j = 0; j < MAX_COL_COUNT; ++j)
+      for (k = 0; k < MAX_HEIGHT; ++k)
+	{
+	  chip_t ch;
+	  position_t pos;
+	  pos.y = i;
+	  pos.x = j;
+	  pos.k = k;
+	  ch = board_get(&g_board, &pos);
+
+	  fprintf(f, "%d\n", ch);
+	}
+
+  fprintf(f, "%d\n", undo_stack.count);
+  for (i = 0; i < undo_stack.count; ++i)
+    fprintf(f, "%d %d %d %d\n",
+	    undo_stack.positions[i].y,
+	    undo_stack.positions[i].x,
+	    undo_stack.positions[i].k,
+	    undo_stack.chips[i]);
 
   fclose(f);
 }

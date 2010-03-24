@@ -592,6 +592,34 @@ static int game_handler(int type, int par1, int par2)
 	  }
 	}
       break;
+    case EVT_POINTERDOWN:
+      {
+	int i;
+	int rx, ry;
+
+	point_change_orientation(par1, par2, GetOrientation(), &rx, &ry);
+
+	for (i = 0; i < g_selectable->count; ++i)
+	  {
+	    struct rect r;
+	    cell_rect(&g_selectable->positions[i], &r);
+	    if (point_in_rect(rx, ry, &r))
+	      {
+		int prev_caret_pos = caret_pos;
+		struct rect prev_r;
+
+		caret_pos = i;
+
+		main_repaint();
+		cell_rect(&g_selectable->positions[prev_caret_pos], &prev_r);
+		PartialUpdate(prev_r.x, prev_r.y, prev_r.w, prev_r.h);
+
+		select_cell();
+		break;
+	      }
+	  }
+      }
+      break;
     }
   return 0;
 }
@@ -732,8 +760,9 @@ static int main_handler(int type, int par1, int par2)
       srand(time(NULL));
       bitmaps_init();
       read_state();
+      if (QueryTouchpanel())
+	CalibrateTouchpanel();
       SetOrientation(orientation);
-
       if (!access(SAVED_GAME_PATH, R_OK))
 	main_menu = main_menu_w_load;
       else

@@ -1,5 +1,7 @@
 #include "menu.h"
 
+#include "geometry.h"
+
 #define MENU_FONT_NAME (DEFAULTFONT)
 #define MENU_FONT_SIZE (18)
 #define MENU_MARGIN (10)
@@ -16,7 +18,7 @@ typedef struct {
   int current;
 
   int calc_required;
-  int x, y, w, h;
+  struct rect bounds;
 } menu_t;
 
 static ifont *g_menu_font = NULL;
@@ -36,25 +38,25 @@ void menu_calc(menu_t *menu)
   SetFont(get_menu_font(), BLACK);
 
   int i;
-  menu->w = 0;
-  menu->h = 0;
+  menu->bounds.w = 0;
+  menu->bounds.h = 0;
   for (i = 0; i < menu->count; ++i)
     {
       if (menu->items[i] > MSG_NONE)
 	{
 	  const int lw = StringWidth((char*)get_message(menu->items[i]));
-	  if (lw > menu->w)
-	    menu->w = lw;
-	  menu->h += MENU_ITEM_HEIGHT;
+	  if (lw > menu->bounds.w)
+	    menu->bounds.w = lw;
+	  menu->bounds.h += MENU_ITEM_HEIGHT;
 	}
       else /*separator*/
 	{
-	  menu->h += MENU_SEPARATOR_HEIGHT;
+	  menu->bounds.h += MENU_SEPARATOR_HEIGHT;
 	}
     }
 
-  menu->x = (ScreenWidth() - menu->w - 2 * MENU_MARGIN) / 2 + MENU_MARGIN;
-  menu->y = ScreenHeight() - menu->h - MENU_MARGIN - 30;
+  menu->bounds.x = (ScreenWidth() - menu->bounds.w - 2 * MENU_MARGIN) / 2 + MENU_MARGIN;
+  menu->bounds.y = ScreenHeight() - menu->bounds.h - MENU_MARGIN - 30;
 }
 
 static void draw_popup(menu_t *menu)
@@ -65,38 +67,38 @@ static void draw_popup(menu_t *menu)
 
   SetFont(get_menu_font(), BLACK);
 
-  FillArea(menu->x - MENU_MARGIN,
-	   menu->y - MENU_MARGIN,
-	   menu->w + 2 * MENU_MARGIN,
-	   menu->h + 2 * MENU_MARGIN,
+  FillArea(menu->bounds.x - MENU_MARGIN,
+	   menu->bounds.y - MENU_MARGIN,
+	   menu->bounds.w + 2 * MENU_MARGIN,
+	   menu->bounds.h + 2 * MENU_MARGIN,
 	   WHITE);
-  DrawRect(menu->x - MENU_MARGIN,
-	   menu->y - MENU_MARGIN,
-	   menu->w + 2 * MENU_MARGIN,
-	   menu->h + 2 * MENU_MARGIN,
+  DrawRect(menu->bounds.x - MENU_MARGIN,
+	   menu->bounds.y - MENU_MARGIN,
+	   menu->bounds.w + 2 * MENU_MARGIN,
+	   menu->bounds.h + 2 * MENU_MARGIN,
 	   BLACK);
 
-  y = menu->y;
+  y = menu->bounds.y;
   for (i = 0; i < menu->count; ++i)
     {
       if (menu->items[i] > MSG_NONE)
 	{
-	  DrawTextRect(menu->x,
+	  DrawTextRect(menu->bounds.x,
 		       y,
-		       menu->w,
+		       menu->bounds.w,
 		       MENU_ITEM_HEIGHT,
 		       (char*)get_message(menu->items[i]),
 		       ALIGN_LEFT | VALIGN_MIDDLE);
 
 	  if (i == menu->current)
-	    DrawSelection(menu->x - 5, y, menu->w + 10, MENU_ITEM_HEIGHT, DGRAY);
+	    DrawSelection(menu->bounds.x - 5, y, menu->bounds.w + 10, MENU_ITEM_HEIGHT, DGRAY);
 
 	  y += MENU_ITEM_HEIGHT;
 	}
       else /*separator*/
 	{
 	  const int sy = y + MENU_SEPARATOR_HEIGHT / 2;
-	  DrawLine(menu->x, sy, menu->x + menu->w, sy, BLACK);
+	  DrawLine(menu->bounds.x, sy, menu->bounds.x + menu->bounds.w, sy, BLACK);
 	  y += MENU_SEPARATOR_HEIGHT;
 	}
     }
@@ -104,10 +106,10 @@ static void draw_popup(menu_t *menu)
 
 static void menu_update(menu_t *menu)
 {
-  PartialUpdate(menu->x - MENU_MARGIN,
-		menu->y - MENU_MARGIN,
-		menu->w + 2 * MENU_MARGIN,
-		menu->h + 2 * MENU_MARGIN);
+  PartialUpdate(menu->bounds.x - MENU_MARGIN,
+		menu->bounds.y - MENU_MARGIN,
+		menu->bounds.w + 2 * MENU_MARGIN,
+		menu->bounds.h + 2 * MENU_MARGIN);
 }
 
 static menu_t g_menu1;
@@ -170,6 +172,42 @@ static int menu_handler(int type, int par1, int par2)
 	  menu->proc(menu->items[menu->current]);
 	  break;
 	}
+      break;
+    case EVT_POINTERDOWN:
+      {
+	menu_calc(menu);
+
+	int rx, ry;
+	point_change_orientation(par1, par2, GetOrientation(), &rx, &ry);
+
+	if (point_in_rect(rx, ry, &menu->bounds))
+	  {
+	    int y = menu->bounds.y;
+	    int i;
+	    for (i = 0; i < menu->count; ++i)
+	      {
+		if (menu->items[i] > MSG_NONE)
+		  {
+		    if (ry >= y && ry < y + MENU_ITEM_HEIGHT)
+		      {
+			menu->current = i;
+			draw_popup(menu);
+			menu_update(menu);
+			menu->proc(menu->items[menu->current]);
+			goto done;
+		      }
+
+		    y += MENU_ITEM_HEIGHT;
+		  }
+		else /*separator*/
+		  {
+		    y += MENU_SEPARATOR_HEIGHT;
+		  }
+	      }
+	  }
+      done:
+	;
+      }
       break;
     }
   return 0;

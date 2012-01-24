@@ -12,6 +12,7 @@ void union_rect(const struct rect* r1, const struct rect* r2, struct rect* r)
 
 void point_change_orientation(int x, int y, int orientation, int *rx, int *ry)
 {
+#ifdef __EMU__ // bug in emulator
   const int w = 600;
   const int h = 800;
   switch (orientation)
@@ -33,6 +34,10 @@ void point_change_orientation(int x, int y, int orientation, int *rx, int *ry)
       *ry = h - y;
       break;
     }
+#else
+  *rx = x;
+  *ry = y;
+#endif
 }
 
 int point_in_rect(int x, int y, const struct rect* r)

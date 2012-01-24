@@ -26,7 +26,7 @@ static int row_count;
 static int col_count;
 static int caret_pos;
 static int selection_pos = -1;
-static positions_t* g_selectable = NULL;
+static positions_t *g_selectable = NULL;
 static int help_index = 0;
 static int help_offset = 0;
 static int game_active = 0;
@@ -50,8 +50,8 @@ static struct
 
 static int cmp_pos(const void *p1, const void *p2)
 {
-  const position_t* pos1 = p1;
-  const position_t* pos2 = p2;
+  const position_t *pos1 = p1;
+  const position_t *pos2 = p2;
   return ((pos1->y - 1) / 2 * MAX_COL_COUNT + pos1->x)
     - ((pos2->y - 1) / 2 * MAX_COL_COUNT + pos2->x);
 }
@@ -127,7 +127,7 @@ static int fits(chip_t a, chip_t b)
     }
 }
 
-static void cell_rect(const position_t *pos, struct rect* r)
+static void cell_rect(const position_t *pos, struct rect *r)
 {
 #define IMG_WIDTH (55)
 #define IMG_HEIGHT (79)
@@ -174,21 +174,21 @@ static void draw_chip(const position_t *pos, chip_t chip)
   struct rect r;
 
   cell_rect(pos, &r);
-  DrawRect(r.x-4, r.y-4, r.w, r.h, DGRAY);
+  DrawRect(r.x - 4, r.y - 4, r.w, r.h, DGRAY);
 
   for (i = 0; i < 3; ++i)
     {
       DrawLine(r.x - 1 - i, r.y - 1 - i, r.x - 1 - i, r.y - 1 - i + r.h - 1, LGRAY);
       DrawLine(r.x - 1 - i, r.y - 1 - i, r.x - 1 - i + r.w - 1, r.y - 1 - i, LGRAY);
     }
-  DrawLine(r.x-4, r.y-4, r.x, r.y, DGRAY);
-  DrawLine(r.x-4+r.w-1, r.y-4, r.x+r.w-1, r.y, DGRAY);
-  DrawLine(r.x-4, r.y-4+r.h-1, r.x, r.y+r.h-1, DGRAY);
+  DrawLine(r.x - 4, r.y - 4, r.x, r.y, DGRAY);
+  DrawLine(r.x - 4 + r.w - 1, r.y - 4, r.x + r.w - 1, r.y, DGRAY);
+  DrawLine(r.x - 4, r.y - 4 + r.h - 1, r.x, r.y + r.h - 1, DGRAY);
 
   FillArea(r.x, r.y, r.w, r.h, WHITE);
   DrawRect(r.x, r.y, r.w, r.h, DGRAY);
 
-  StretchBitmap(r.x+1, r.y+1, r.w-2, r.h-2, (ibitmap*)bitmaps[chip], 0);
+  StretchBitmap(r.x + 1, r.y + 1, r.w - 2, r.h - 2, (ibitmap*)bitmaps[chip], 0);
 
   if (caret_pos >= 0 && caret_pos < g_selectable->count)
     {
@@ -200,7 +200,7 @@ static void draw_chip(const position_t *pos, chip_t chip)
     {
       position_t *selection = &g_selectable->positions[selection_pos];
       if (position_equal(pos, selection))
-	InvertArea(r.x+1, r.y+1, r.w-2, r.h-2);
+	InvertArea(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
     }
 }
 
@@ -217,7 +217,7 @@ static int is_covered_by(const void *p1, const void *p2)
   if (s2->y >= s1->y + 2)
     return 0;
 
-  if (abs(s2->y -s1->y) <= 1)
+  if (abs(s2->y - s1->y) <= 1)
     return s2->x < s1->x;
 
   if (s2->y == s1->y - 2)
@@ -257,7 +257,7 @@ static void main_repaint(void)
 
   ClearScreen();
 
-  for (i = chip_count - 1; i >=0; --i)
+  for (i = chip_count - 1; i >= 0; --i)
     {
       const position_t *pos = &chips[i];
       draw_chip(pos, board_get(&g_board, pos));
@@ -464,8 +464,8 @@ static void select_cell(void)
       undo_stack.chips[undo_stack.count] = chip2;
       ++undo_stack.count;
 
-      board_set( &g_board, &g_selectable->positions[selection_pos], 0);
-      board_set( &g_board, &g_selectable->positions[caret_pos], 0);
+      board_set(&g_board, &g_selectable->positions[selection_pos], 0);
+      board_set(&g_board, &g_selectable->positions[caret_pos], 0);
 
       selection_pos = -1;
 
@@ -780,7 +780,7 @@ static int main_handler(int type, int par1, int par2)
 
 static void read_state(void)
 {
-  FILE * f = fopen(STATEPATH "/pb-mahjong", "r");
+  FILE *f = fopen(STATEPATH "/pb-mahjong", "r");
   if (!f)
     return;
 
@@ -795,10 +795,10 @@ static void read_state(void)
       if (regexec(&reg, line, 16, pmatch, 0))
 	continue;
 
-      const char * key = &line[pmatch[1].rm_so];
+      const char *key = &line[pmatch[1].rm_so];
       line[pmatch[1].rm_eo] = '\0';
 
-      const char * value = &line[pmatch[4].rm_so];
+      const char *value = &line[pmatch[4].rm_so];
       line[pmatch[4].rm_eo] = '\0';
 
       if (!strcmp(key, "language"))
@@ -823,7 +823,7 @@ static void read_state(void)
 
 static void write_state(void)
 {
-  FILE * f = fopen(STATEPATH "/pb-mahjong", "w");
+  FILE *f = fopen(STATEPATH "/pb-mahjong", "w");
   if (!f)
     return;
 
@@ -844,7 +844,7 @@ static int load_game(void)
 {
   int i, j, k;
 
-  FILE * f = fopen(SAVED_GAME_PATH, "r");
+  FILE *f = fopen(SAVED_GAME_PATH, "r");
   if (!f)
     return 0;
 
@@ -882,7 +882,7 @@ static void save_game(void)
 {
   int i, j, k;
 
-  FILE * f = fopen(SAVED_GAME_PATH, "w");
+  FILE *f = fopen(SAVED_GAME_PATH, "w");
   if (!f)
     return;
 

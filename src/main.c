@@ -760,8 +760,6 @@ static int main_handler(int type, int par1, int par2)
       srand(time(NULL));
       bitmaps_init();
       read_state();
-      if (QueryTouchpanel())
-	CalibrateTouchpanel();
       SetOrientation(orientation);
       if (!access(SAVED_GAME_PATH, R_OK))
 	main_menu = main_menu_w_load;

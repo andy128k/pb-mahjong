@@ -1,4 +1,8 @@
 *~
 *.exe
-*.app
+/pb-mahjong
+/pb-mahjong.app
+/system
+/pb-mahjong.saved-game
+/images-temp.c
 

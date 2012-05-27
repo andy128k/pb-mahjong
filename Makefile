@@ -1,76 +1,30 @@
-OUT = pb-mahjong
-VPATH+= 
+POCKETBOOKSDK=/usr/local/pocketbook/FRSCSDK
 
-CFLAGS+= -DHAS_NO_IV_GET_DEFAULT_FONT
+SIM_CFLAGS=`pkg-config --cflags freetype2`
 
-ifndef BUILD
-BUILD=emu
-endif
+SRC=\
+	src/bitmaps.c \
+	src/board.c \
+	src/common.c \
+	src/geometry.c \
+	src/main.c \
+	src/maps.c \
+	src/menu.c \
+	src/messages.c \
+	images-temp.c
 
+all: pb-mahjong pb-mahjong.app
 
-ifeq (${BUILD},emu)
-CFLAGS+=`freetype-config --cflags`
-endif
+images-temp.c:
+	$(POCKETBOOKSDK)/bin/pbres -c images-temp.c images/*.bmp
 
-SOURCES = \
-    src/bitmaps.c\
-    src/board.c   \
-    src/common.c   \
-    src/geometry.c  \
-    src/main.c  \
-    src/maps.c   \
-    src/menu.c    \
-    src/messages.c
+pb-mahjong: $(SRC)
+	gcc -o pb-mahjong -m32 -g3 -Wall -DEMULATION=1 -DIVSAPP -I$(POCKETBOOKSDK)/include $(SIM_CFLAGS) $(SRC) -L$(POCKETBOOKSDK)/lib -Wl,-rpath $(POCKETBOOKSDK)/lib -linkview
 
+pb-mahjong.app: $(SRC)
+	$(POCKETBOOKSDK)/bin/arm-none-linux-gnueabi-gcc -o pb-mahjong.app -Wall -I$(POCKETBOOKSDK)/include $(SRC) -pthread -linkview -lfreetype -lz -lm
+	$(POCKETBOOKSDK)/bin/arm-none-linux-gnueabi-strip pb-mahjong.app
 
-BITMAPS = \
-    images/background.bmp\
-    images/chip_51.bmp\
-    images/chip_52.bmp\
-    images/chip_53.bmp\
-    images/chip_54.bmp\
-    images/chip_55.bmp\
-    images/chip_56.bmp\
-    images/chip_57.bmp\
-    images/chip_58.bmp\
-    images/chip_59.bmp\
-    images/chip_61.bmp\
-    images/chip_62.bmp\
-    images/chip_63.bmp\
-    images/chip_64.bmp\
-    images/chip_65.bmp\
-    images/chip_66.bmp\
-    images/chip_67.bmp\
-    images/chip_68.bmp\
-    images/chip_69.bmp\
-    images/chip_71.bmp\
-    images/chip_72.bmp\
-    images/chip_73.bmp\
-    images/chip_74.bmp\
-    images/chip_75.bmp\
-    images/chip_76.bmp\
-    images/chip_77.bmp\
-    images/chip_78.bmp\
-    images/chip_79.bmp\
-    images/chip_91.bmp\
-    images/chip_92.bmp\
-    images/chip_93.bmp\
-    images/chip_94.bmp\
-    images/chip_A1.bmp\
-    images/chip_A2.bmp\
-    images/chip_A3.bmp\
-    images/chip_D1.bmp\
-    images/chip_D2.bmp\
-    images/chip_D3.bmp\
-    images/chip_D4.bmp\
-    images/chip_E1.bmp\
-    images/chip_E2.bmp\
-    images/chip_E3.bmp\
-    images/chip_E4.bmp
-
-include /usr/local/pocketbook/common.mk
-
-$(OBJDIR):
-	mkdir -p $(OBJDIR)/src
-	mkdir -p $(OBJDIR)/images
+clean:
+	rm -f images-temp.* pb-mahjong pb-mahjong.app
 

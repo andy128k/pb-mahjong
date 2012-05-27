@@ -865,11 +865,15 @@ static int load_game(void)
 
   fscanf(f, "%d\n", &undo_stack.count);
   for (i = 0; i < undo_stack.count; ++i)
-    fscanf(f, "%d %d %d %d\n",
-	   &undo_stack.positions[i].y,
-	   &undo_stack.positions[i].x,
-	   &undo_stack.positions[i].k,
-	   &undo_stack.chips[i]);
+    {
+      int chip;
+      fscanf(f, "%d %d %d %d\n",
+	     &undo_stack.positions[i].y,
+	     &undo_stack.positions[i].x,
+	     &undo_stack.positions[i].k,
+	     &chip);
+      undo_stack.chips[i] = chip;
+    }
 
   fclose(f);
 
